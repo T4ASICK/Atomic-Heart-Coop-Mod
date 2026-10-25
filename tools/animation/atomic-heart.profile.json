@@ -1,0 +1,36 @@
+{
+  "name": "Atomic Heart procedural P3",
+  "_scope": "Procedural solver states; these names are not stock Unreal animation group IDs.",
+  "angle_unit": "deg",
+  "units_per_meter": 100,
+  "bones": {
+    "root": "pelvis",
+    "spine1": "spine_01",
+    "spine2": "spine_02",
+    "neck": "neck_01",
+    "head": "head",
+    "left_upper_arm": "upperarm_l",
+    "left_forearm": "lowerarm_l",
+    "left_hand": "hand_l",
+    "right_upper_arm": "upperarm_r",
+    "right_forearm": "lowerarm_r",
+    "right_hand": "hand_r",
+    "left_calf": "calf_l",
+    "left_foot": "foot_l",
+    "right_calf": "calf_r",
+    "right_foot": "foot_r"
+  },
+  "categories": {
+    "idle": ["proc.idle"],
+    "walk": ["proc.walk"],
+    "run": ["proc.run"],
+    "jump": ["proc.jump"],
+    "aim": ["proc.aim"],
+    "attack": ["proc.attack"],
+    "reload": ["proc.reload"],
+    "misc": ["proc.cast"]
+  },
+  "thresholds": {
+    "interp_delay_ms": 100
+  }
+}

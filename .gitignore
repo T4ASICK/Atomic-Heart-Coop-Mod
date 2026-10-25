@@ -1,0 +1,38 @@
+__pycache__/
+*.pyc
+state/
+local/
+*.log
+dist/
+dists/
+logicmod/**/Binaries/
+logicmod/**/DerivedDataCache/
+logicmod/**/Intermediate/
+logicmod/**/Saved/
+logicmod/**/.vs/
+logicmod/**/Content/Development/
+logicmod/**/Content/Mods/
+
+# Compiler outputs belong in local/ or dist/.
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.map
+*.exe
+*.dll
+
+# Machine-specific research output.
+reports/
+.vs/
+.idea/
+
+# Local dependencies and credentials are not source files.
+runtime/
+.venv/
+venv/
+.pytest_cache/
+.env
+.env.*
+!.env.example

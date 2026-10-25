@@ -1,0 +1,18 @@
+{
+  "FileVersion": 3,
+  "EngineAssociation": "4.27",
+  "Category": "Modding",
+  "Description": "UE4.27 build project for Ghost Co-op interface and material assets.",
+  "Modules": [
+    {
+      "Name": "AHGhostCoopLogic",
+      "Type": "Runtime",
+      "LoadingPhase": "Default"
+    },
+    {
+      "Name": "AHGhostCoopLogicEditor",
+      "Type": "Editor",
+      "LoadingPhase": "Default"
+    }
+  ]
+}

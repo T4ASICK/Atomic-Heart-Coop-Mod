@@ -1,0 +1,19 @@
+{
+  "author": "Quaternius",
+  "license": "CC0-1.0",
+  "source": "https://quaternius.itch.io/universal-animation-library",
+  "archive_sha256": "cc73fc4e495b82958207316596317a3f40b9fa38065bde1027937452da537724",
+  "glb_sha256": "69591853d817488edaa8fd9bf8fc1d821eaeaf789f8627b3cd23b41c4ed67997",
+  "clips": {
+    "idle": "Idle_Loop",
+    "walk": "Walk_Loop",
+    "jog": "Jog_Fwd_Loop",
+    "sprint": "Sprint_Loop",
+    "jump_start": "Jump_Start",
+    "jump_loop": "Jump_Loop",
+    "jump_land": "Jump_Land"
+  },
+  "source_leg_length_m": 0.8297897260124192,
+  "fps": 30,
+  "contains_game_assets": false
+}
