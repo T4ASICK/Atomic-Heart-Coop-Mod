@@ -66,7 +66,7 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(protocol.decode(encoded, b"room"), message)
         self.assertIsNone(protocol.decode(encoded, b"wrong"))
         self.assertIsNone(protocol.decode(encoded[:-1] + b"x", b"room"))
-        self.assertIsNone(protocol.decode(b"x" * 9000, b"room"))
+        self.assertIsNone(protocol.decode(b"x" * (protocol.MAX_PACKET + 1), b"room"))
         legacy = dict(message, version=2)
         self.assertIsNone(protocol.decode(protocol.encode(legacy, b"room"), b"room"))
         self.assertIn("incompatible protocol", relay.Room().receive(legacy, ("127.0.0.1", 1), 1)["error"])
@@ -83,7 +83,11 @@ class ProtocolTests(unittest.TestCase):
         self.assertIsNotNone(room.peers["a"].state)
         self.assertEqual((room.peers["a"].state["shot"], room.peers["a"].state["action"]), (10, 20))
         self.assertIn("error", room.receive(packet("a", 6), ("127.0.0.1", 3), 10.1))
-        self.assertIn("error", room.receive(packet("c"), ("127.0.0.1", 3), 10.1))
+        for index in range(2, protocol.MAX_PLAYERS):
+            response = room.receive(packet(f"p{index}"), ("127.0.0.1", index + 10), 10.1)
+            self.assertNotIn("error", response)
+        self.assertEqual(len(room.peers), 8)
+        self.assertIn("8 players", room.receive(packet("ninth"), ("127.0.0.1", 99), 10.2)["error"])
         response = room.receive(packet("c"), ("127.0.0.1", 3), 13)
         self.assertEqual(response["players"], [])
 

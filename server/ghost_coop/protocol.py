@@ -9,8 +9,8 @@ import re
 
 PROTOCOL = 3
 TIMEOUT = 2.0
-MAX_PACKET = 8192
-MAX_PLAYERS = 2
+MAX_PACKET = 32768
+MAX_PLAYERS = 8
 TOKEN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
@@ -99,7 +99,10 @@ def invalid_json_constant(value: str):
 
 def encode(message: dict, key: bytes) -> bytes:
     body = json.dumps(message, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
-    return hmac.new(key, body, hashlib.sha256).hexdigest().encode("ascii") + b"\n" + body
+    packet = hmac.new(key, body, hashlib.sha256).hexdigest().encode("ascii") + b"\n" + body
+    if len(packet) > MAX_PACKET:
+        raise ValueError("packet exceeds byte limit")
+    return packet
 
 
 def decode(packet: bytes, key: bytes, *, accept_other_versions: bool = False) -> dict | None:
@@ -118,7 +121,10 @@ def decode(packet: bytes, key: bytes, *, accept_other_versions: bool = False) ->
 
 
 def remote_text(session: str, seq: int, players: list[dict]) -> str:
+    if not isinstance(players, list) or len(players) >= MAX_PLAYERS:
+        raise ValueError("roster exceeds seven remote players")
     rows = []
+    identities = set()
     for player in players:
         if not isinstance(player, dict) or set(player) != {"id", "name", "state"}:
             raise ValueError("invalid player metadata")
@@ -126,6 +132,9 @@ def remote_text(session: str, seq: int, players: list[dict]) -> str:
         pid = player.get("id", "")
         if not isinstance(pid, str) or not TOKEN.fullmatch(pid):
             raise ValueError("invalid player identity")
+        if pid in identities:
+            raise ValueError("duplicate player identity")
+        identities.add(pid)
         name = clean_name(player["name"])
         if state is None:
             continue
@@ -137,4 +146,7 @@ def remote_text(session: str, seq: int, players: list[dict]) -> str:
         fields.extend(["1" if state["grip"] is not None else "0",
                        *map(str, state["grip"] if state["grip"] is not None else [0] * 18)])
         rows.append("\t".join(fields))
-    return f"AHGR3\t{session}\t{seq}\t{len(rows)}\n" + "".join(row + "\n" for row in rows)
+    text = f"AHGR3\t{session}\t{seq}\t{len(rows)}\n" + "".join(row + "\n" for row in rows)
+    if len(text.encode("utf-8")) > MAX_PACKET:
+        raise ValueError("roster exceeds byte limit")
+    return text

@@ -1,4 +1,4 @@
-"""Two-player LAN relay and file bridge. Python 3.10+, standard library only."""
+"""Eight-player LAN relay and file bridge. Python 3.10+, standard library only."""
 import argparse
 import socket
 import sys
@@ -8,6 +8,7 @@ from .bridge import bridge
 from .relay import serve
 from .state_files import DEFAULT_GAME_PATH
 from .transport import DEFAULT_PORT
+from .protocol import MAX_PLAYERS
 
 
 def build_parser():
@@ -15,7 +16,7 @@ def build_parser():
     sub = parser.add_subparsers(dest="command", required=True)
     for command in ("server", "host", "client"):
         p = sub.add_parser(command)
-        p.add_argument("--room", required=True, help="same private room code on both laptops")
+        p.add_argument("--room", required=True, help="same private room code on all computers")
         if command != "client":
             p.add_argument("--host", default="0.0.0.0")
             p.add_argument("--port", type=int, default=DEFAULT_PORT)
@@ -39,7 +40,7 @@ def main(argv=None) -> int:
                 raise ValueError("port must be 1-65535")
             relay = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             relay.bind((args.host, args.port))
-            print(f"[relay] listening on {args.host}:{args.port}, capacity 2", flush=True)
+            print(f"[relay] listening on {args.host}:{args.port}, capacity {MAX_PLAYERS}", flush=True)
             if args.command == "server":
                 serve(relay, args.room.encode("utf-8"), stop)
                 return 0

@@ -1,4 +1,4 @@
-"""Two-player room lifecycle and authenticated UDP relay."""
+"""Eight-player room lifecycle and authenticated UDP relay."""
 from __future__ import annotations
 
 import socket
@@ -46,7 +46,7 @@ class Room:
         if peer is not None and (peer.endpoint != endpoint or seq <= peer.seq):
             return {"error": "old packet or endpoint changed"}
         if peer is None and len(self.peers) >= MAX_PLAYERS:
-            return {"error": "room is full (2 players)"}
+            return {"error": f"room is full ({MAX_PLAYERS} players)"}
         self.peers[pid] = Peer(endpoint, name, seq, now, state)
         return {"players": [{"id": other, "name": p.name, "state": p.state}
                             for other, p in self.peers.items() if other != pid]}
