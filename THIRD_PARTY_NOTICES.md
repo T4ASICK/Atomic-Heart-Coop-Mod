@@ -10,6 +10,14 @@
 
 ## Внешние инструменты и runtime
 
+Для Steam Spacewar используется оригинальная `steam_api64.dll` Valve из Steamworks SDK.
+Она не относится к MIT-лицензии кода мода. `tools/setup_steam.ps1 -Download` извлекает её
+из [Steamworks.NET Standalone 2025.164.1](https://github.com/rlabrecque/Steamworks.NET/releases/tag/2025.164.1),
+проверяя SHA-256 архива. Источник и хеши сохраняются в `runtime/steam/SOURCE.json`,
+уведомление Steamworks.NET — в `runtime/steam/Steamworks.NET-LICENSE.txt`.
+Собственная привязка к C API находится в `server/ghost_coop/steam_api.py`;
+управляемая библиотека Steamworks.NET не используется. Steam и Steamworks принадлежат Valve.
+
 UE4SS скачивается пользователем отдельно со
 [страницы UE4SS for Atomic Heart](https://www.nexusmods.com/atomicheart/mods/186).
 Бинарники, конфигурация, загрузчик и сигнатуры UE4SS не входят в исходники

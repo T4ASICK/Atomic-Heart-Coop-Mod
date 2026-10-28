@@ -1,4 +1,4 @@
-"""Eight-player LAN relay and file bridge. Python 3.10+, standard library only."""
+"""Eight-player LAN / Steam Spacewar bridge. Python 3.10+, standard library only."""
 import argparse
 import socket
 import sys
@@ -14,6 +14,10 @@ from .protocol import MAX_PLAYERS
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
+    service = sub.add_parser("menu-service")
+    service.add_argument("--state-dir", required=True)
+    service.add_argument("--game-path", default=DEFAULT_GAME_PATH)
+    service.add_argument("--parent-pid", type=int, default=0)
     for command in ("server", "host", "client"):
         p = sub.add_parser(command)
         p.add_argument("--room", required=True, help="same private room code on all computers")
@@ -25,6 +29,15 @@ def build_parser():
             p.add_argument("--name", required=True)
             p.add_argument("--game-path", default=DEFAULT_GAME_PATH)
             p.add_argument("--state-dir", default="")
+    for command in ("steam-host", "steam-join"):
+        p = sub.add_parser(command)
+        p.add_argument("--name", required=True)
+        p.add_argument("--room", required=True, help="same private room code on all computers")
+        p.add_argument("--game-path", default=DEFAULT_GAME_PATH)
+        p.add_argument("--state-dir", default="")
+        p.add_argument("--steam-api", default="", help="path to the Steamworks SDK steam_api64.dll")
+        if command == "steam-join":
+            p.add_argument("--lobby", type=int, required=True, help="lobby ID printed by SteamHost")
     return parser
 
 
@@ -33,8 +46,16 @@ def main(argv=None) -> int:
     stop = threading.Event()
     relay, thread = None, None
     try:
+        if args.command == "menu-service":
+            from .gui_service import gui_service
+            gui_service(args, stop)
+            return 0
         if not 4 <= len(args.room) <= 128:
             raise ValueError("room code must contain 4-128 characters")
+        if args.command.startswith("steam-"):
+            from .steam_bridge import steam_bridge
+            steam_bridge(args, stop)
+            return 0
         if args.command in ("server", "host"):
             if not 1 <= args.port <= 65535:
                 raise ValueError("port must be 1-65535")

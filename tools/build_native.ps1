@@ -17,6 +17,14 @@ $Commands = @(
     "cl $CompilerFlags /Zi /DUNICODE /D_UNICODE src\dllmain.cpp buffer.obj hook.obj trampoline.obj hde64.obj user32.lib /link /DLL /DEBUG:FULL /OPT:REF /OPT:ICF /OUT:AHGhostCoopNative.dll /PDB:AHGhostCoopNative.pdb /PDBALTPATH:AHGhostCoopNative.pdb /MAP:AHGhostCoopNative.map"
 )
 if ($Test) {
+    $Commands += @(
+        "cl $CompilerFlags /LD tests\steam_route_fixture.cpp /Fe:steam_route_fixture.dll"
+        "cl $CompilerFlags /LD tests\steam_client_fixture.cpp /Fe:steam_client_fixture.dll"
+        'if not exist route_game mkdir route_game'
+        'if not exist route_real mkdir route_real'
+        'copy /y steam_client_fixture.dll route_game\steamclient64.dll >nul'
+        'copy /y steam_client_fixture.dll route_real\steamclient64.dll >nul'
+    )
     foreach ($Source in Get-ChildItem -LiteralPath (Join-Path $StageDir 'tests') -Filter '*_tests.cpp' -File | Sort-Object Name) {
         $Commands += "cl $CompilerFlags tests\$($Source.Name) /Fe:$($Source.BaseName).exe"
         $Commands += "$($Source.BaseName).exe"

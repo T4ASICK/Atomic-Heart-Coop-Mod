@@ -42,9 +42,9 @@ def read_local(path: Path, started: float) -> dict | None:
 
 
 @contextmanager
-def state_lock(directory: Path):
+def state_lock(directory: Path, filename="bridge.lock"):
     directory.mkdir(parents=True, exist_ok=True)
-    with (directory / "bridge.lock").open("a+b") as lock:
+    with (directory / filename).open("a+b") as lock:
         lock.seek(0)
         lock.write(b"0")
         lock.flush()

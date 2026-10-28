@@ -59,11 +59,11 @@ void run_tests()
     check(feed.push(*roster, 1.0), "first bridge roster accepted");
     auto heartbeat = *roster;
     heartbeat.seq = 2;
-    check(feed.push(heartbeat, 1.7) && feed.heartbeat == 1.7 && feed.sample_time == 1.0,
+    check(feed.push(heartbeat, 1.7) && feed.heartbeat == 1.7 && feed.roster.players.front().received_at == 1.0,
           "bridge heartbeat does not renew a peer sample");
     check(!feed.push(*roster, 1.8) && feed.heartbeat == 1.7, "old file sequence rejected");
     Track recreated;
-    recreated.push(feed.roster.players.front(), feed.sample_time);
+    recreated.push(feed.roster.players.front(), feed.roster.players.front().received_at);
     check(!recreated.latest(1.8),
           "visibility reset does not make stale teleport coordinates fresh");
     heartbeat.players.clear();
@@ -72,39 +72,39 @@ void run_tests()
     heartbeat = *roster;
     heartbeat.seq = 4;
     feed.push(heartbeat, 1.9);
-    check(feed.sample_time == 1.0, "empty roster does not forget the peer sample age");
+    check(feed.roster.players.front().received_at == 1.0, "empty roster does not forget the peer sample age");
     heartbeat.session = "restartedBridge";
     heartbeat.seq = 1;
     feed.push(heartbeat, 2.1);
-    check(feed.sample_time == 1.0, "bridge restart does not renew unchanged peer state");
+    check(feed.roster.players.front().received_at == 1.0, "bridge restart does not renew unchanged peer state");
     recreated.clear();
-    recreated.push(feed.roster.players.front(), feed.sample_time);
+    recreated.push(feed.roster.players.front(), feed.roster.players.front().received_at);
     check(!recreated.evaluate(3.1), "recreated stale visual stays expired");
     heartbeat.seq = 2;
     heartbeat.players.front().seq = 5;
     feed.push(heartbeat, 3.2);
-    check(feed.sample_time == 3.2, "new peer sequence renews freshness");
+    check(feed.roster.players.front().received_at == 3.2, "new peer sequence renews freshness");
     heartbeat.seq = 3;
     heartbeat.players.front().seq = 4;
     heartbeat.players.front().position.x = 999;
     feed.push(heartbeat, 3.3);
-    check(feed.sample_time == 3.2 && feed.roster.players.front().seq == 5 &&
+    check(feed.roster.players.front().received_at == 3.2 && feed.roster.players.front().seq == 5 &&
               feed.roster.players.front().position.x != 999,
           "reordered peer sample cannot replace newer state");
     heartbeat.seq = 4;
     heartbeat.players.front().session = "newGame";
     heartbeat.players.front().seq = 1;
     feed.push(heartbeat, 3.4);
-    check(feed.sample_time == 3.4 && feed.roster.players.front().seq == 1,
+    check(feed.roster.players.front().received_at == 3.4 && feed.roster.players.front().seq == 1,
           "new game session accepts sequence reset");
     heartbeat.seq = 5;
     heartbeat.players.front().world = "/Game/Other";
     feed.push(heartbeat, 3.5);
-    check(feed.sample_time == 3.5, "peer world change resets sample watermark");
+    check(feed.roster.players.front().received_at == 3.5, "peer world change resets sample watermark");
     heartbeat.seq = 6;
     heartbeat.players.front().id = "rejoined";
     feed.push(heartbeat, 3.6);
-    check(feed.sample_time == 3.6, "new peer identity resets sample watermark");
+    check(feed.roster.players.front().received_at == 3.6, "new peer identity resets sample watermark");
     Track track;
     State a = roster->players.front();
     a.position = {0, 0, 0};

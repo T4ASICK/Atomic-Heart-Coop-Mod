@@ -38,6 +38,10 @@ if (!$Uninstall) {
     if (!(Test-Path -LiteralPath (Join-Path $Win64 'UE4SS_Signatures') -PathType Container)) {
         throw 'UE4SS installation incomplete; install the Atomic Heart UE4SS_Signatures folder separately.'
     }
+    if (!(Test-Path -LiteralPath (Join-Path $ProjectRoot 'runtime\python\python.exe')) -and
+        !(Get-Command python -ErrorAction SilentlyContinue)) {
+        throw 'The lobby menu needs Python. Use the complete player archive.'
+    }
 }
 if ($DryRun) {
     Write-Host "Target: $Win64"
@@ -78,12 +82,46 @@ if ($Uninstall) {
 }
 $Lua = Join-Path $Mods 'AHGhostCoop'
 $Native = Join-Path $Mods 'AHGhostCoopNative\dlls'
-New-Item -ItemType Directory -Path $Lua,$Native -Force | Out-Null
+New-Item -ItemType Directory -Path $Lua,$Native,(Join-Path $Lua 'state') -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $ProjectRoot 'mod\AHGhostCoop\Scripts') -Destination $Lua -Recurse -Force
 if (!(Test-Path -LiteralPath (Join-Path $Lua 'settings.ini'))) {
     Copy-Item -LiteralPath (Join-Path $ProjectRoot 'mod\AHGhostCoop\settings.ini') -Destination $Lua
 }
 Copy-Item -LiteralPath $Dll -Destination (Join-Path $Native 'main.dll') -Force
+# The DLL starts this companion with CREATE_NO_WINDOW. Keep its dependencies
+# beside the installed mod so the release folder may be moved after installation.
+$Bridge=Join-Path $Lua 'bridge'
+$ServerSource=Join-Path $ProjectRoot 'server'
+foreach ($File in Get-ChildItem -LiteralPath $ServerSource -Recurse -File -Filter '*.py') {
+    if ($File.FullName -match '[\\/]__pycache__[\\/]') { continue }
+    $Destination=Join-Path $Bridge ('server\'+$File.FullName.Substring($ServerSource.Length+1))
+    New-Item -ItemType Directory -Path (Split-Path -Parent $Destination) -Force | Out-Null
+    Copy-Item -LiteralPath $File.FullName -Destination $Destination -Force
+}
+$PortablePython=Join-Path $ProjectRoot 'runtime\python'
+if (Test-Path -LiteralPath (Join-Path $PortablePython 'python.exe')) {
+    $Runtime=Join-Path $Bridge 'runtime'
+    New-Item -ItemType Directory -Path $Runtime -Force | Out-Null
+    Copy-Item -LiteralPath $PortablePython -Destination $Runtime -Recurse -Force
+    $Python=Join-Path $Runtime 'python\pythonw.exe'
+    if (!(Test-Path -LiteralPath $Python)) { $Python=Join-Path $Runtime 'python\python.exe' }
+} else {
+    $SystemPython=Get-Command python -ErrorAction SilentlyContinue
+    if (!$SystemPython) { throw 'The lobby menu needs Python. Use the complete player archive.' }
+    $Python=$SystemPython.Source
+}
+[IO.File]::WriteAllText((Join-Path $Bridge 'runtime.ini'),"[Runtime]`r`nPythonPath=$Python`r`n",[Text.Encoding]::Unicode)
+$SteamRuntime=Join-Path $ProjectRoot 'runtime\steam'
+if (Test-Path -LiteralPath $SteamRuntime) {
+    $Runtime=Join-Path $Bridge 'runtime'
+    New-Item -ItemType Directory -Path $Runtime -Force | Out-Null
+    Copy-Item -LiteralPath $SteamRuntime -Destination $Runtime -Recurse -Force
+    $InstalledSteamApi=Join-Path $Runtime 'steam/steam_api64.dll'
+    if (Test-Path -LiteralPath $InstalledSteamApi) {
+        # Keep the early mod SDK from satisfying the game's delayed DLL imports.
+        Copy-Item -LiteralPath $InstalledSteamApi -Destination (Join-Path $Runtime 'steam/ahg_steam_api64.dll') -Force
+    }
+}
 if (Test-Path -LiteralPath $InstalledPak) { Copy-Item -LiteralPath $InstalledPak -Destination $Backup }
 New-Item -ItemType Directory -Path (Split-Path -Parent $InstalledPak) -Force | Out-Null
 Copy-Item -LiteralPath $NavigationPak -Destination $InstalledPak -Force
@@ -126,5 +164,5 @@ $OldPak = Join-Path $GamePath 'AtomicHeart\Content\Paks\LogicMods\AHGhostCoop.pa
 if (Test-Path -LiteralPath $OldPak) {
     Move-Item -LiteralPath $OldPak -Destination (Join-Path $Backup 'AHGhostCoop.pak')
 }
-Write-Host "Installed Ghost Co-op 0.9.2-preview. Backup: $Backup"
-Write-Host 'Controls: Home opens/closes the mod menu; online peers appear automatically.'
+Write-Host "Installed Ghost Co-op 0.10.6-preview. Backup: $Backup"
+Write-Host 'Home opens Steam / LAN lobby controls and the teleport player list. No separate launcher is required.'

@@ -1,5 +1,6 @@
 #pragma once
 #include "ghost/engine/windows.hpp"
+#include "ghost/core/state.hpp"
 #include <filesystem>
 #include <string>
 
@@ -13,7 +14,7 @@ inline bool read_shared(const std::filesystem::path& path, std::string& text)
                               OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (file == INVALID_HANDLE_VALUE)
         return false;
-    char buffer[8193];
+    char buffer[ghost::max_snapshot_bytes + 1];
     DWORD count = 0;
     bool ok = ReadFile(file, buffer, sizeof(buffer), &count, nullptr) && count < sizeof(buffer);
     CloseHandle(file);

@@ -36,7 +36,7 @@ function Initialize-NativeBuildStage {
 }
 
 function Get-NativeCompilerFlags {
-    return '/nologo /std:c++20 /EHsc /O2 /MD /W4 /WX /permissive- /I include /I . /I tests'
+    return '/nologo /utf-8 /std:c++20 /EHsc /O2 /MD /W4 /WX /permissive- /I include /I . /I tests'
 }
 
 function Invoke-MsvcBuild {

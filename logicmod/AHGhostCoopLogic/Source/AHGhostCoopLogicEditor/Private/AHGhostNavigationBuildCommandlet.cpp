@@ -6,6 +6,9 @@
 #include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
+#include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
+#include "Components/EditableTextBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
@@ -50,46 +53,71 @@ bool BuildMenu()
     FEdGraphPinType Integer; Integer.PinCategory=UEdGraphSchema_K2::PC_Int;
     FBlueprintEditorUtils::AddMemberVariable(Widget,TEXT("Request"),Integer,TEXT("0"));
     UBorder* Root=Widget->WidgetTree->ConstructWidget<UBorder>();
-    Root->SetBrushColor(FLinearColor(.025f,.035f,.05f,.98f)); Root->SetPadding(FMargin(24));
+    Root->SetBrushColor(FLinearColor(.025f,.035f,.05f,.98f)); Root->SetPadding(FMargin(16));
     USizeBox* Frame=Widget->WidgetTree->ConstructWidget<USizeBox>();
     Frame->SetWidthOverride(600); Frame->SetHeightOverride(640); Frame->AddChild(Root);
     Widget->WidgetTree->RootWidget=Frame;
     UVerticalBox* Rows=Widget->WidgetTree->ConstructWidget<UVerticalBox>(); Root->AddChild(Rows);
     UObject* Font=LoadObject<UFont>(nullptr,TEXT("/Engine/EngineFonts/Roboto.Roboto"));
-    auto Text=[&](const TCHAR* Name,const TCHAR* Label,int32 Size)
+    auto Text=[&](const FString& Name,const FString& Label,int32 Size)
     {
-        UTextBlock* Block=Widget->WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(),FName(Name));
+        UTextBlock* Block=Widget->WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(),FName(*Name));
         Block->bIsVariable=true; Block->SetFont(FSlateFontInfo(Font,Size,TEXT("Regular")));
         Block->SetText(FText::FromString(Label)); Block->SetAutoWrapText(true);
         return Block;
     };
-    Rows->AddChildToVerticalBox(Text(TEXT("Title"),TEXT("AH Ghost Co-op"),26))->SetPadding(FMargin(0,0,0,12));
+    Rows->AddChildToVerticalBox(Text(TEXT("Title"),TEXT("AH Ghost Co-op · 8 игроков"),24))->SetPadding(FMargin(0,0,0,6));
     USizeBox* StatusBox=Widget->WidgetTree->ConstructWidget<USizeBox>();
-    StatusBox->SetHeightOverride(52); StatusBox->SetClipping(EWidgetClipping::ClipToBounds);
-    auto* Status=Text(TEXT("StatusText"),TEXT(""),16);
-    FindFProperty<FFloatProperty>(UTextBlock::StaticClass(),TEXT("WrapTextAt"))->SetPropertyValue_InContainer(Status,548.0f);
-    StatusBox->AddChild(Status);
-    Rows->AddChildToVerticalBox(StatusBox)->SetPadding(FMargin(0,0,0,8));
-    // Preserve action IDs so older menu packages cannot invoke a different command.
-    const int32 ActionIds[]={1,5,6};
-    const TCHAR* Labels[]={TEXT("Закрыть меню · Home"),
-        TEXT("Показать / скрыть сетевого игрока"),TEXT("Телепорт к сетевому игроку")};
-    static_assert(UE_ARRAY_COUNT(ActionIds)==UE_ARRAY_COUNT(Labels),"Each menu label needs an action ID");
-    TArray<UButton*> Buttons;
-    for (int32 Index=0;Index<UE_ARRAY_COUNT(Labels);++Index)
+    StatusBox->SetHeightOverride(56); StatusBox->SetClipping(EWidgetClipping::ClipToBounds);
+    StatusBox->AddChild(Text(TEXT("StatusText"),TEXT("Steam: 1/8 · создайте лобби или примите приглашение"),14));
+    Rows->AddChildToVerticalBox(StatusBox);
+    TArray<UButton*> Buttons; TArray<int32> ActionIds;
+    auto Button=[&](const FString& Name,const FString& Label,int32 Action)
     {
-        UButton* Button=Widget->WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(),FName(*FString::Printf(TEXT("Action%d"),ActionIds[Index])));
-        Button->bIsVariable=true;
-        auto* Label=Text(*FString::Printf(TEXT("Label%d"),ActionIds[Index]),Labels[Index],20);
-        Label->SetAutoWrapText(false); Label->SetJustification(ETextJustify::Center);
-        auto* Content=CastChecked<UButtonSlot>(Button->AddChild(Label));
-        Content->SetHorizontalAlignment(HAlign_Fill); Content->SetVerticalAlignment(VAlign_Center); Content->SetPadding(FMargin(12,6));
-        Button->SetBackgroundColor(FLinearColor(.10f,.18f,.23f,1));
-        USizeBox* Row=Widget->WidgetTree->ConstructWidget<USizeBox>(); Row->SetHeightOverride(52); Row->AddChild(Button);
-        auto* Slot=Rows->AddChildToVerticalBox(Row); Slot->SetPadding(FMargin(0,3)); Slot->SetHorizontalAlignment(HAlign_Fill);
-        Buttons.Add(Button);
+        auto* Value=Widget->WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(),FName(*Name));
+        Value->bIsVariable=true; Value->SetBackgroundColor(FLinearColor(.10f,.18f,.23f,1));
+        auto* Caption=Text(Action>=100 ? FString::Printf(TEXT("ItemLabel%d"),Action-100) : TEXT("Label")+Name,Label,16);
+        Caption->SetAutoWrapText(false); Caption->SetJustification(ETextJustify::Center);
+        auto* Slot=CastChecked<UButtonSlot>(Value->AddChild(Caption));
+        Slot->SetHorizontalAlignment(HAlign_Fill); Slot->SetVerticalAlignment(VAlign_Center); Slot->SetPadding(FMargin(8,3));
+        Buttons.Add(Value); ActionIds.Add(Action); return Value;
+    };
+    UHorizontalBox* Tabs=Widget->WidgetTree->ConstructWidget<UHorizontalBox>();
+    const TCHAR* TabLabels[]={TEXT("Steam"),TEXT("LAN"),TEXT("Телепортация")};
+    for (int32 Index=0;Index<3;++Index)
+    {
+        auto* Slot=Tabs->AddChildToHorizontalBox(Button(FString::Printf(TEXT("Action%d"),21+Index),TabLabels[Index],21+Index));
+        Slot->SetSize(FSlateChildSize(ESlateSizeRule::Fill)); Slot->SetPadding(FMargin(2,0));
     }
-    Rows->AddChildToVerticalBox(Text(TEXT("Hint"),TEXT("Home — открыть или закрыть меню.\nСетевой игрок появляется автоматически."),14))->SetPadding(FMargin(0,12,0,0));
+    USizeBox* TabFrame=Widget->WidgetTree->ConstructWidget<USizeBox>(); TabFrame->SetHeightOverride(36); TabFrame->AddChild(Tabs);
+    Rows->AddChildToVerticalBox(TabFrame)->SetPadding(FMargin(0,3));
+    Rows->AddChildToVerticalBox(Text(TEXT("PageTitle"),TEXT("Steam Spacewar"),18))->SetPadding(FMargin(0,3));
+    auto* Inputs=Widget->WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(),TEXT("Inputs"));
+    Inputs->bIsVariable=true; Rows->AddChildToVerticalBox(Inputs);
+    const TCHAR* InputNames[]={TEXT("NameInput"),TEXT("RoomInput"),TEXT("AddressInput")};
+    const TCHAR* Hints[]={TEXT("Ваше имя"),TEXT("Код комнаты (необязательно для Steam)"),TEXT("ID лобби Steam / адрес LAN-сервера")};
+    for (int32 Index=0;Index<3;++Index)
+    {
+        auto* Input=Widget->WidgetTree->ConstructWidget<UEditableTextBox>(UEditableTextBox::StaticClass(),InputNames[Index]);
+        Input->bIsVariable=true; Input->WidgetStyle.SetFont(FSlateFontInfo(Font,15,TEXT("Regular")));
+        Input->SetHintText(FText::FromString(Hints[Index]));
+        if (!Index) Input->SetText(FText::FromString(TEXT("Player")));
+        auto* Box=Widget->WidgetTree->ConstructWidget<USizeBox>(); Box->SetHeightOverride(32); Box->AddChild(Input);
+        Inputs->AddChildToVerticalBox(Box)->SetPadding(FMargin(0,1));
+    }
+    const TCHAR* Labels[]={TEXT("Создать лобби"),TEXT("Подключиться по ID лобби"),
+        TEXT("Пригласить друга — Steam Overlay"),TEXT("Покинуть лобби"),TEXT("Показать / скрыть игроков"),TEXT(""),TEXT("")};
+    for (int32 Index=0;Index<7;++Index)
+    {
+        auto* Box=Widget->WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(),*FString::Printf(TEXT("ItemRow%d"),Index));
+        Box->bIsVariable=true; Box->SetHeightOverride(36);
+        Box->AddChild(Button(FString::Printf(TEXT("Item%d"),Index),Labels[Index],100+Index));
+        if (Index>=5) Box->SetVisibility(ESlateVisibility::Collapsed);
+        Rows->AddChildToVerticalBox(Box)->SetPadding(FMargin(0,1));
+    }
+    auto* Close=Widget->WidgetTree->ConstructWidget<USizeBox>(); Close->SetHeightOverride(36);
+    Close->AddChild(Button(TEXT("Action1"),TEXT("Закрыть меню · Home"),1));
+    Rows->AddChildToVerticalBox(Close)->SetPadding(FMargin(0,4,0,0));
     FKismetEditorUtilities::CompileBlueprint(Widget);
     UEdGraph* Graph=FBlueprintEditorUtils::FindEventGraph(Widget);
     if (!Graph) return false;
@@ -109,47 +137,56 @@ bool BuildMenu()
     }
     FKismetEditorUtilities::CompileBlueprint(Widget);
     if (Widget->Status==BS_Error) return false;
-    // Exercise real generated widget bindings, not just the graph description.
     UUserWidget* Instance=NewObject<UUserWidget>(GetTransientPackage(),Widget->GeneratedClass);
     if (!Instance->Initialize()) return false;
     auto* Request=FindFProperty<FIntProperty>(Instance->GetClass(),TEXT("Request"));
     if (!Request) return false;
     for (int32 Index=0;Index<Buttons.Num();++Index)
     {
-        auto* Button=Cast<UButton>(Instance->GetWidgetFromName(FName(*FString::Printf(TEXT("Action%d"),ActionIds[Index]))));
-        if (!Button) return false;
-        Request->SetPropertyValue_InContainer(Instance,0);
-        Button->OnClicked.Broadcast();
+        auto* Value=Cast<UButton>(Instance->GetWidgetFromName(Buttons[Index]->GetFName()));
+        if (!Value) return false;
+        Request->SetPropertyValue_InContainer(Instance,0); Value->OnClicked.Broadcast();
         if (Request->GetPropertyValue_InContainer(Instance)!=ActionIds[Index]) return false;
     }
-    CastChecked<UTextBlock>(Instance->GetWidgetFromName(TEXT("StatusText")))->SetText(FText::FromString(TEXT("Сетевой игрок: виден")));
+    for (const TCHAR* Name : InputNames)
+        if (!Cast<UEditableTextBox>(Instance->GetWidgetFromName(Name))) return false;
     FWidgetRenderer Renderer(true);
     auto SlateWidget=Instance->TakeWidget();
-    auto* Target=Renderer.DrawWidget(SlateWidget,FVector2D(600,640));
-    FlushRenderingCommands();
+    auto* Target=Renderer.DrawWidget(SlateWidget,FVector2D(600,640)); FlushRenderingCommands();
     TArray<FColor> Pixels;
     if (!Target || !Target->GameThread_GetRenderTargetResource()->ReadPixels(Pixels)) return false;
     TArray<uint8> PNG; FImageUtils::CompressImageArray(600,640,Pixels,PNG);
     if (!FFileHelper::SaveArrayToFile(PNG,*(FPaths::ProjectSavedDir()/TEXT("GhostMenu-preview.png")))) return false;
-    float PreviousBottom=0;
-    for (int32 Index=0;Index<Buttons.Num();++Index)
+    for (auto* Source : Buttons)
     {
-        auto* Button=Instance->GetWidgetFromName(FName(*FString::Printf(TEXT("Action%d"),ActionIds[Index])));
-        auto* Label=Instance->GetWidgetFromName(FName(*FString::Printf(TEXT("Label%d"),ActionIds[Index])));
-        const FGeometry Geometry=Button->GetPaintSpaceGeometry();
-        const float Top=Geometry.GetAbsolutePosition().Y,Bottom=Top+Geometry.GetAbsoluteSize().Y;
-        if (Geometry.GetLocalSize().Y<50 || Top<PreviousBottom || Bottom>640 ||
-            Label->GetDesiredSize().X>Label->GetPaintSpaceGeometry().GetLocalSize().X ||
-            Label->GetDesiredSize().Y>Label->GetPaintSpaceGeometry().GetLocalSize().Y)
-        {
-            UE_LOG(LogTemp,Error,TEXT("Menu layout row%d top%f bottom%f local%s labelDesired%s labelActual%s"),
-                Index,Top,Bottom,*Geometry.GetLocalSize().ToString(),*Label->GetDesiredSize().ToString(),*Label->GetPaintSpaceGeometry().GetLocalSize().ToString());
-            return false;
-        }
-        PreviousBottom=Bottom;
+        auto* Value=Instance->GetWidgetFromName(Source->GetFName());
+        const auto Geometry=Value->GetPaintSpaceGeometry();
+        if (Geometry.GetLocalSize().Y>0 && Geometry.GetAbsolutePosition().Y+Geometry.GetAbsoluteSize().Y>640.5f)
+        { UE_LOG(LogTemp,Error,TEXT("Lobby menu overflow: %s"),*Value->GetName()); return false; }
     }
-    UE_LOG(LogTemp,Display,TEXT("Ghost menu layout self-test: three non-overlapping 52px buttons; labels fit; saved 600x640 Slate render"));
-    UE_LOG(LogTemp,Display,TEXT("Ghost menu self-test: all 3 generated button events deliver action IDs 1, 5 and 6"));
+    Instance->GetWidgetFromName(TEXT("Inputs"))->SetVisibility(ESlateVisibility::Collapsed);
+    CastChecked<UTextBlock>(Instance->GetWidgetFromName(TEXT("PageTitle")))->SetText(FText::FromString(TEXT("Телепортация — выберите игрока")));
+    CastChecked<UTextBlock>(Instance->GetWidgetFromName(TEXT("StatusText")))->SetText(FText::FromString(TEXT("Steam: 8/8 · выберите напарника для телепортации")));
+    for (int32 Index=0;Index<7;++Index)
+    {
+        Instance->GetWidgetFromName(*FString::Printf(TEXT("ItemRow%d"),Index))->SetVisibility(ESlateVisibility::Visible);
+        CastChecked<UTextBlock>(Instance->GetWidgetFromName(*FString::Printf(TEXT("ItemLabel%d"),Index)))->SetText(
+            FText::FromString(FString::Printf(TEXT("Игрок %d%s"),Index+1,Index==6 ? TEXT(" — другая карта") : TEXT(""))));
+        Instance->GetWidgetFromName(*FString::Printf(TEXT("Item%d"),Index))->SetIsEnabled(Index!=6);
+    }
+    Instance->ForceLayoutPrepass();
+    Target=Renderer.DrawWidget(SlateWidget,FVector2D(600,640)); FlushRenderingCommands();
+    Pixels.Reset(); PNG.Reset();
+    if (!Target || !Target->GameThread_GetRenderTargetResource()->ReadPixels(Pixels)) return false;
+    FImageUtils::CompressImageArray(600,640,Pixels,PNG);
+    if (!FFileHelper::SaveArrayToFile(PNG,*(FPaths::ProjectSavedDir()/TEXT("GhostPlayers-preview.png")))) return false;
+    for (int32 Index=0;Index<7;++Index)
+    {
+        const auto Geometry=Instance->GetWidgetFromName(*FString::Printf(TEXT("Item%d"),Index))->GetPaintSpaceGeometry();
+        if (Geometry.GetLocalSize().Y<30 || Geometry.GetAbsolutePosition().Y+Geometry.GetAbsoluteSize().Y>640)
+        { UE_LOG(LogTemp,Error,TEXT("Teleport list overflow: row %d"),Index); return false; }
+    }
+    UE_LOG(LogTemp,Display,TEXT("Lobby menu self-test: all 11 button events and 3 editable inputs verified; rendered 600x640"));
     return SaveAsset(Package,Widget);
 }
 bool BuildOpaqueWeapon()

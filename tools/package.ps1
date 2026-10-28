@@ -34,7 +34,7 @@ foreach ($Name in @('AHGhostCoopNative.dll','AHGhostCoopNative.pdb','AHGhostCoop
         throw "Build artifact missing: dist\$Name"
     }
 }
-$Archive=if ($ArchivePath) { [IO.Path]::GetFullPath($ArchivePath) } else { Join-Path $Root 'dist\AHGhostCoop-0.9.2-preview.zip' }
+$Archive=if ($ArchivePath) { [IO.Path]::GetFullPath($ArchivePath) } else { Join-Path $Root 'dist\AHGhostCoop-0.10.6-preview.zip' }
 $SymbolsArchive=if ($SymbolsArchivePath) { [IO.Path]::GetFullPath($SymbolsArchivePath) } else {
     Join-Path (Split-Path -Parent $Archive) ([IO.Path]::GetFileNameWithoutExtension($Archive)+'-symbols.zip')
 }
@@ -46,11 +46,17 @@ New-Item -ItemType Directory -Path $Package -Force | Out-Null
 # Explicit release inputs keep development tools, state and source files out.
 $PlayerFiles=@(
     'README.md','LICENSE','THIRD_PARTY_NOTICES.md','Install.cmd','Host.cmd','Join.cmd','Diagnostics.cmd',
+    'SteamHost.cmd','SteamJoin.cmd','tools/setup_steam.ps1',
     'assets/sponsor-ru.svg','assets/sponsor-en.svg',
+    'assets/ui/steam-lobby.png','assets/ui/teleport-players.png',
     'tools/install.ps1','tools/start.ps1','tools/diagnose.ps1','tools/firewall.ps1',
     'mod/AHGhostCoop/settings.ini','mod/AHGhostCoop/Scripts/main.lua',
     'dist/AHGhostCoopNative.dll','dist/AHGhostCoopNavigation_P.pak'
 )
+foreach ($SteamFile in @('steam_api64.dll','SOURCE.json','Steamworks.NET-LICENSE.txt')) {
+    $Relative='runtime/steam/'+$SteamFile
+    if (Test-Path -LiteralPath (Join-Path $Root $Relative) -PathType Leaf) { $PlayerFiles+=$Relative }
+}
 $Gameplay=Join-Path $Root 'assets\gameplay'
 if (Test-Path -LiteralPath $Gameplay -PathType Container) {
     foreach ($Gif in Get-ChildItem -LiteralPath $Gameplay -File -Filter '*.gif' | Sort-Object Name) {
@@ -61,6 +67,10 @@ foreach ($Relative in $PlayerFiles) {
     $Destination=Join-Path $Package $Relative
     New-Item -ItemType Directory -Path (Split-Path -Parent $Destination) -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $Root $Relative) -Destination $Destination
+}
+$PackagedSteamApi=Join-Path $Package 'runtime/steam/steam_api64.dll'
+if (Test-Path -LiteralPath $PackagedSteamApi) {
+    Copy-Item -LiteralPath $PackagedSteamApi -Destination (Join-Path $Package 'runtime/steam/ahg_steam_api64.dll')
 }
 $Server=Join-Path $Root 'server'
 foreach ($File in Get-ChildItem -LiteralPath $Server -File -Recurse -Filter '*.py') {

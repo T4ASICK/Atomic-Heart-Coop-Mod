@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cwchar>
 #include <exception>
 #include <ios>
@@ -18,6 +19,8 @@
 #include "ghost/ui/ghost_menu.hpp"
 
 #include "ghost/platform/shared_files.hpp"
+#include "ghost/platform/menu_service.hpp"
+#include "ghost/platform/steam_overlay.hpp"
 #include "ghost/visual/pose_probe.hpp"
 
 #include <atomic>
@@ -25,6 +28,8 @@
 #include <fstream>
 #include <iomanip>
 #include <mutex>
+#include <map>
+#include <set>
 #include <sstream>
 
 namespace
@@ -68,7 +73,10 @@ class GhostMod final : public RC::CppUserModBase
     ghost::Teleporter teleporter{api, reflection};
     ghost::ModMenu menu{api, reflection};
     GameTickHook game_tick;
-    fs::path mod_dir, state_dir, log_path;
+    ghost::platform::MenuServiceProcess menu_service;
+    ghost::platform::SteamOverlay steam_overlay;
+    std::string renderer_startup;
+    fs::path mod_dir, state_dir, log_path, game_dir;
     std::atomic_bool initialized{false}, faulted{false};
     std::atomic_flag ticking = ATOMIC_FLAG_INIT;
     std::atomic<unsigned> commands{};
@@ -83,16 +91,26 @@ class GhostMod final : public RC::CppUserModBase
     ghost::RosterFeed incoming;
     std::string outgoing, status = "waiting for a game-thread tick", last_logged;
     std::uint64_t outgoing_revision{}, written_revision{};
+    std::string gui_status = "Starting lobby service", gui_command, teleport_peer;
+    std::uint64_t gui_lobby{}, gui_seq{}, gui_revision{}, gui_written{};
     std::string command_session;
     std::uint64_t command_seq{};
     double last_io{}, last_status_io{}, last_command{};
+    double last_overlay_check{};
+    std::string last_overlay_status;
     double last_frame{}, stable_since{}, last_publish{};
-    std::string instance, world_key, peer_key;
+    std::string instance, world_key;
     std::uint64_t world_generation{}, sample_seq{};
     ue::Weak current_world, current_pawn;
-    ghost::Visual remote_visual;
-    ghost::Track remote_track;
-    bool online_enabled{true}, visual_failed{};
+    struct Remote
+    {
+        ghost::Visual visual;
+        ghost::Track track;
+        std::string session;
+        bool failed{};
+    };
+    std::map<std::string, Remote> remotes;
+    bool online_enabled{true};
     ghost::PoseProbe pose_probe;
     std::atomic_bool pose_probe_enabled{};
     std::string pose_probe_pending;
@@ -243,13 +261,12 @@ class GhostMod final : public RC::CppUserModBase
     void reset_world()
     {
         menu.close();
-        renderer.remove(remote_visual);
-        remote_track.clear();
-        peer_key.clear();
+        for (auto& [id, remote] : remotes)
+            renderer.remove(remote.visual);
+        remotes.clear();
         world_key.clear();
         current_world = {};
         current_pawn = {};
-        visual_failed = false;
         ++world_generation;
         publish("");
     }
@@ -345,15 +362,50 @@ class GhostMod final : public RC::CppUserModBase
         {
             if (control & MenuToggle)
                 menu.toggle(controller);
-            const std::string caption = "Online: " + std::string(online_enabled ? "ON" : "OFF") +
+            ghost::Roster menu_roster;
+            std::string connection;
+            std::uint64_t lobby{};
+            {
+                std::scoped_lock lock(exchange_mutex);
+                if (now - incoming.heartbeat < 2.0)
+                    menu_roster = incoming.roster;
+                connection = gui_status;
+                lobby = gui_lobby;
+            }
+            if (lobby)
+                connection += " | Lobby " + std::to_string(lobby);
+            const std::string caption = connection +
                                         (now < action_until ? "\n" + action_message : "");
-            const int request = menu.update(caption);
+            const int request = menu.update(caption, menu_roster, world_key, now);
+            if (!menu.network_command.empty())
+            {
+                std::scoped_lock lock(exchange_mutex);
+                gui_command = "AHGUI1\t" + instance + "\t" + std::to_string(++gui_seq) + "\t" +
+                              menu.network_command + "\n";
+                ++gui_revision;
+            }
+            if (menu.invite_requested)
+            {
+                try
+                {
+                    steam_overlay.open(mod_dir / L"bridge/runtime/steam/ahg_steam_api64.dll", lobby);
+                    menu.close();
+                    action_message = "Steam invitation dialog requested";
+                }
+                catch (const std::exception& error)
+                {
+                    action_message = std::string("Steam Overlay: ") + error.what();
+                    std::ofstream(log_path, std::ios::app) << action_message << '\n';
+                }
+                action_until = now + 12;
+            }
             switch (request)
             {
             case 5:
                 control |= OnlineToggle;
                 break;
             case 6:
+                teleport_peer = menu.selected_peer;
                 menu.close();
                 teleport_requested = now;
                 control |= Teleport;
@@ -377,48 +429,70 @@ class GhostMod final : public RC::CppUserModBase
         if (control & OnlineToggle)
         {
             online_enabled = !online_enabled;
-            visual_failed = false;
+            for (auto& [id, remote] : remotes)
+                remote.failed = false;
         }
 
         ghost::Roster roster;
-        double seen{}, sample_seen{};
+        double seen{};
         {
             std::unique_lock lock(exchange_mutex, std::try_to_lock);
             if (lock.owns_lock())
             {
                 roster = incoming.roster;
                 seen = incoming.heartbeat;
-                sample_seen = incoming.sample_time;
             }
             else
                 return;
         }
-        const bool compatible = online_enabled && now - seen < 2.0 && !roster.players.empty() &&
-                                roster.players.front().world == world_key;
-        if (compatible)
+        std::set<std::string> present;
+        if (online_enabled && now - seen < 2.0)
         {
-            const auto& remote = roster.players.front();
-            const std::string identity = roster.session + "/" + remote.id + "/" + remote.session;
-            if (identity != peer_key)
+            for (const auto& state : roster.players)
             {
-                renderer.remove(remote_visual);
-                remote_track.clear();
-                peer_key = identity;
-                visual_failed = false;
+                if (state.world != world_key || now - state.received_at > 2.0)
+                    continue;
+                present.insert(state.id);
+                auto& remote = remotes[state.id];
+                const auto session = roster.session + "/" + state.session;
+                if (remote.session != session)
+                {
+                    renderer.remove(remote.visual);
+                    remote.track.clear();
+                    remote.session = session;
+                    remote.failed = false;
+                }
+                remote.track.push(state, state.received_at);
             }
-            remote_track.push(remote, sample_seen);
         }
-        else
+        for (auto it = remotes.begin(); it != remotes.end();)
         {
-            renderer.remove(remote_visual);
-            remote_track.clear();
-            peer_key.clear();
+            if (!present.contains(it->first))
+            {
+                renderer.remove(it->second.visual);
+                it = remotes.erase(it);
+            }
+            else
+                ++it;
         }
         if ((control & Teleport) && now - teleport_requested.load() < 0.5)
         {
             try
             {
-                if (teleporter.attempt(pawn, controller, remote_track.latest(now), local, now,
+                std::optional<State> target;
+                if (!teleport_peer.empty())
+                {
+                    auto peer = remotes.find(teleport_peer);
+                    if (peer != remotes.end())
+                        target = peer->second.track.latest(now);
+                }
+                else
+                    for (const auto& [id, remote] : remotes)
+                        if (auto candidate = remote.track.latest(now))
+                            if (!target || ghost::length(candidate->position - local.position) <
+                                               ghost::length(target->position - local.position))
+                                target = *candidate;
+                if (teleporter.attempt(pawn, controller, target, local, now,
                                        action_message))
                 {
                     local = sample(controller, pawn);
@@ -430,6 +504,7 @@ class GhostMod final : public RC::CppUserModBase
                 action_message = std::string("teleport rejected: ") + error.what();
             }
             action_until = now + 8;
+            teleport_peer.clear();
         }
         if (now - last_publish >= 0.05)
         {
@@ -448,41 +523,43 @@ class GhostMod final : public RC::CppUserModBase
             line << '\n';
             publish(line.str());
         }
-        if (visual_failed)
-            return;
-        try
+        std::size_t visible{};
+        std::string visual_errors;
+        for (auto& [id, peer] : remotes)
         {
-            auto remote = remote_track.evaluate(now);
-            if (remote && ghost::length(remote->position - local.position) < 100000)
-                render(remote_visual, world, *remote, local.position, controller);
-            else
-                renderer.remove(remote_visual);
-            std::string message = "game ready; online=" + std::to_string(online_enabled) +
-                                  "; remote=" + std::to_string(remote_visual.ready);
-            message += "; model=" + std::string(ghost::model_assets(renderer.model).name);
-            message += "; local_weapon=" + std::to_string(local.combat.weapon) +
-                       "; grip=" + std::to_string(local.combat.calibrated);
-            if (!combat_sampler.calibration_error.empty())
-                message += "; grip_error=" + combat_sampler.calibration_error;
-            if (!remote_visual.weapon_error.empty())
-                message += "; remote_weapon_error=" + remote_visual.weapon_error;
-            if (remote_visual.ready)
-                message +=
-                    "; remote_model=" + std::string(ghost::model_assets(remote_visual.model).name);
-            if (!roster.players.empty() && !compatible)
-                message += "; peer in another map or online hidden";
-            message += "; world=" + world_key;
-            if (now < action_until)
-                message += "; " + action_message;
-            set_status(message);
+            if (peer.failed)
+                continue;
+            try
+            {
+                auto remote = peer.track.evaluate(now);
+                if (remote && ghost::length(remote->position - local.position) < 100000)
+                    render(peer.visual, world, *remote, local.position, controller);
+                else
+                    renderer.remove(peer.visual);
+                visible += peer.visual.ready ? 1 : 0;
+                if (!peer.visual.weapon_error.empty())
+                    visual_errors += "; weapon_error[" + id + "]=" + peer.visual.weapon_error;
+            }
+            catch (const std::exception& error)
+            {
+                renderer.remove(peer.visual);
+                peer.failed = true;
+                action_message = "visual disabled for " + id + ": " + error.what() +
+                                 "; toggle online visibility to retry";
+                action_until = now + 8;
+            }
         }
-        catch (const std::exception& error)
-        {
-            renderer.remove(remote_visual);
-            visual_failed = true;
-            set_status(std::string("visual disabled: ") + error.what() +
-                       "; toggle online visibility in Home menu to retry");
-        }
+        std::string message = "game ready; online=" + std::to_string(online_enabled) +
+                              "; remote=" + std::to_string(visible) + "; capacity=8";
+        message += "; model=" + std::string(ghost::model_assets(renderer.model).name);
+        message += "; local_weapon=" + std::to_string(local.combat.weapon) +
+                   "; grip=" + std::to_string(local.combat.calibrated);
+        if (!combat_sampler.calibration_error.empty())
+            message += "; grip_error=" + combat_sampler.calibration_error;
+        message += visual_errors + "; world=" + world_key;
+        if (now < action_until)
+            message += "; " + action_message;
+        set_status(message);
     }
     void poll_command(double now)
     {
@@ -520,14 +597,30 @@ public:
     GhostMod()
     {
         ModName = L"AHGhostCoopNative";
-        ModVersion = L"0.9.2-preview";
-        ModDescription = L"Two-player LAN ghosts";
+        ModVersion = L"0.10.6-preview";
+        ModDescription = L"Eight-player LAN and Steam ghosts";
         ModAuthors = L"tchas";
         ModIntendedSDKVersion = L"3.0.1";
         DWORD mode{};
         const auto input = GetStdHandle(STD_INPUT_HANDLE);
         if (GetConsoleMode(input, &mode))
             SetConsoleMode(input, (mode | ENABLE_EXTENDED_FLAGS) & ~ENABLE_QUICK_EDIT_MODE);
+        try
+        {
+            std::wstring path(32768, L'\0');
+            const DWORD count = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
+            if (!count || count == path.size())
+                throw std::runtime_error("game executable path unavailable");
+            path.resize(count);
+            steam_overlay.initialize(fs::path(path).parent_path() /
+                L"Mods/AHGhostCoop/bridge/runtime/steam/ahg_steam_api64.dll");
+            renderer_startup = "Early Spacewar SDK initialized under a distinct DLL name; AppID " +
+                               std::to_string(steam_overlay.application_id());
+        }
+        catch (const std::exception& error)
+        {
+            renderer_startup = std::string("Early Spacewar initialization: ") + error.what();
+        }
     }
     void on_unreal_init() override
     {
@@ -539,16 +632,32 @@ public:
                 throw std::runtime_error("game executable path unavailable");
             path.resize(count);
             const auto win64 = fs::path(path).parent_path();
+            game_dir = win64.parent_path().parent_path().parent_path();
             mod_dir = win64 / L"Mods" / L"AHGhostCoop";
             state_dir = mod_dir / L"state";
             log_path = win64 / L"Mods" / L"AHGhostCoopNative" / L"native.log";
             fs::create_directories(state_dir);
             fs::create_directories(log_path.parent_path());
-            std::ofstream(log_path) << "AHGhostCoopNative 0.9.2-preview: concrete GameEngine "
+            std::ofstream(log_path) << "AHGhostCoopNative 0.10.6-preview: concrete GameEngine "
                                        "post-tick, protocol AHG3\n";
+            std::ofstream(log_path, std::ios::app) << renderer_startup << '\n';
+            try
+            {
+                steam_overlay.initialize(mod_dir / L"bridge/runtime/steam/ahg_steam_api64.dll");
+                std::ofstream(log_path, std::ios::app)
+                    << "Real Steam UI context: AppID " << steam_overlay.application_id() << "; Overlay "
+                    << (steam_overlay.attached() ? "attached" : "waiting for renderer") << '\n';
+            }
+            catch (const std::exception& error)
+            {
+                // Steam is optional; LAN and the local menu must still initialize.
+                std::ofstream(log_path, std::ios::app) << "Steam Overlay startup: " << error.what() << '\n';
+            }
             write_atomic(state_dir / L"local.tsv", "");
             DeleteFileW((state_dir / L"native_command.txt").c_str());
             DeleteFileW((state_dir / L"remote.tsv").c_str());
+            DeleteFileW((state_dir / L"gui_command.tsv").c_str());
+            DeleteFileW((state_dir / L"gui_status.tsv").c_str());
             instance =
                 std::to_string(GetCurrentProcessId()) + "-" + std::to_string(GetTickCount64());
             auto setting = [&](const wchar_t* name, float fallback)
@@ -605,15 +714,63 @@ public:
         if (now - last_io < 0.025)
             return;
         last_io = now;
+        try
+        {
+            if (initialized.load())
+                menu_service.start(mod_dir, game_dir);
+        }
+        catch (const std::exception& error)
+        {
+            std::scoped_lock lock(exchange_mutex);
+            gui_status = error.what();
+        }
         poll_command(now);
+        if (const auto invited = steam_overlay.poll_invitation())
+        {
+            std::scoped_lock lock(exchange_mutex);
+            gui_command = "AHGUI1\t" + instance + "\t" + std::to_string(++gui_seq) +
+                          "\tsteam_join\t\t\t" + std::to_string(invited) + "\n";
+            ++gui_revision;
+        }
+        if (now - last_overlay_check >= 1.0)
+        {
+            last_overlay_check = now;
+            const std::string report = "AppID=" + std::to_string(steam_overlay.application_id()) +
+                                       "; Overlay=" + (steam_overlay.attached() ? "enabled" : "unavailable");
+            write_atomic(state_dir / L"steam_overlay_status.txt", report + "\n");
+            if (report != last_overlay_status)
+            {
+                std::ofstream(log_path, std::ios::app) << "Steam UI: " << report << '\n';
+                last_overlay_status = report;
+            }
+        }
         std::string data;
+        if (read_shared(state_dir / L"gui_status.tsv", data))
+        {
+            auto lines = ghost::split(data, '\n');
+            auto header = ghost::split(lines[0], '\t');
+            std::uint64_t lobby{};
+            if (header.size() == 2 && header[0] == "AHUI1")
+            {
+                auto parsed = std::from_chars(header[1].data(), header[1].data() + header[1].size(), lobby);
+                if (parsed.ec == std::errc{} && parsed.ptr == header[1].data() + header[1].size())
+                    for (auto line : lines)
+                        if (line.starts_with("S\t") && line.size() <= 2048)
+                        {
+                            std::scoped_lock lock(exchange_mutex);
+                            gui_lobby = lobby;
+                            gui_status = std::string(line.substr(2));
+                        }
+            }
+        }
         if (read_shared(state_dir / L"remote.tsv", data))
             if (auto roster = ghost::parse_roster(data))
             {
                 std::scoped_lock lock(exchange_mutex);
                 incoming.push(std::move(*roster), now);
             }
-        std::string local, message;
+        std::string local, message, gui_pending;
+        std::uint64_t gui_pending_revision{};
         std::uint64_t revision{};
         std::string pose_report;
         bool reset_pose_report = false;
@@ -621,6 +778,8 @@ public:
             std::scoped_lock lock(exchange_mutex);
             local = outgoing;
             revision = outgoing_revision;
+            gui_pending = gui_command;
+            gui_pending_revision = gui_revision;
             message = status;
             pose_report = std::move(pose_probe_pending);
             pose_probe_pending.clear();
@@ -635,6 +794,9 @@ public:
         }
         if (revision != written_revision && write_atomic(state_dir / L"local.tsv", local))
             written_revision = revision;
+        if (gui_pending_revision != gui_written &&
+            write_atomic(state_dir / L"gui_command.tsv", gui_pending))
+            gui_written = gui_pending_revision;
         if (now - last_status_io >= 0.5)
         {
             last_status_io = now;
@@ -673,4 +835,25 @@ extern "C" __declspec(dllexport) RC::CppUserModBase* start_mod()
 extern "C" __declspec(dllexport) void uninstall_mod(RC::CppUserModBase* mod)
 {
     delete mod;
+}
+
+// The standalone Python companion uses the same scoped SDK routing implementation.
+// Loading this DLL alone does not construct GhostMod or access Unreal Engine.
+extern "C" __declspec(dllexport) void* ahg_create_steam_client_route(
+    HMODULE sdk, HMODULE client, const wchar_t* path, char* error, std::uint32_t capacity)
+{
+    try
+    {
+        if (!path) throw std::runtime_error("Missing real Steam client path");
+        return new ghost::platform::SteamClientRoute(sdk, client, path);
+    }
+    catch (const std::exception& exception)
+    {
+        if (error && capacity) std::snprintf(error, capacity, "%s", exception.what());
+        return nullptr;
+    }
+}
+extern "C" __declspec(dllexport) void ahg_destroy_steam_client_route(void* route)
+{
+    delete static_cast<ghost::platform::SteamClientRoute*>(route);
 }

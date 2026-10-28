@@ -5,6 +5,7 @@
 #include <deque>
 #include <optional>
 #include <utility>
+#include <map>
 
 namespace ghost
 {
@@ -12,28 +13,36 @@ namespace ghost
 // Keep the watermark through empty rosters and local world/visibility changes.
 class RosterFeed
 {
-    std::optional<State> last_sample;
+    std::map<std::string, State> last_samples;
 
 public:
     Roster roster;
-    double heartbeat{}, sample_time{};
+    double heartbeat{};
     bool push(Roster next, double now)
     {
         if (next.session == roster.session && next.seq <= roster.seq)
             return false;
-        if (!next.players.empty())
+        for (auto& state : next.players)
         {
-            auto& state = next.players.front();
-            const bool changed = !last_sample || state.id != last_sample->id ||
-                                 state.session != last_sample->session ||
-                                 state.world != last_sample->world;
-            if (changed || state.seq > last_sample->seq)
+            auto previous = last_samples.find(state.id);
+            const bool changed = previous == last_samples.end() ||
+                                 state.session != previous->second.session ||
+                                 state.world != previous->second.world;
+            if (changed || state.seq > previous->second.seq)
             {
-                last_sample = state;
-                sample_time = now;
+                state.received_at = now;
+                last_samples[state.id] = state;
             }
             else
-                state = *last_sample;
+                state = previous->second;
+        }
+        // Keep recent watermarks across brief absences without unbounded churn.
+        while (last_samples.size() > 64)
+        {
+            auto oldest = std::min_element(last_samples.begin(), last_samples.end(),
+                [](const auto& a, const auto& b)
+                { return a.second.received_at < b.second.received_at; });
+            last_samples.erase(oldest);
         }
         roster = std::move(next);
         heartbeat = now;

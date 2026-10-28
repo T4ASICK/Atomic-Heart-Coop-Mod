@@ -24,4 +24,4 @@ local function command(value)
 end
 
 RegisterKeyBindAsync(Key.HOME, function() command("menu_toggle") end)
-log("0.9.2-preview controls ready: Home opens/closes the mod menu")
+log("0.10.6-preview controls ready: Home opens/closes the mod menu")

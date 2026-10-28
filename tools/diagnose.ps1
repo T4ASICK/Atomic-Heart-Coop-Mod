@@ -4,9 +4,22 @@ $Root=Split-Path -Parent $PSScriptRoot
 $Win64=Join-Path $GamePath 'AtomicHeart\Binaries\Win64'
 $State=Join-Path $Win64 'Mods\AHGhostCoop\state'
 Write-Host "Game: $GamePath"
+foreach ($Relative in @('Mods/AHGhostCoopNative/dlls/main.dll',
+    'Mods/AHGhostCoop/bridge/server/ghost_coop/gui_service.py',
+    'Mods/AHGhostCoop/bridge/runtime.ini','Mods/AHGhostCoop/bridge/runtime/steam/steam_api64.dll')) {
+    Write-Host ("{0}: {1}" -f $Relative,$(if(Test-Path -LiteralPath (Join-Path $Win64 $Relative)){'present'}else{'MISSING - install the complete package'}))
+}
+$IncorrectDll=Join-Path $Win64 'Mods/AHGhostCoopNative/dlls/AHGhostCoopNative.dll'
+if ((Test-Path -LiteralPath $IncorrectDll) -and !(Test-Path -LiteralPath (Join-Path $Win64 'Mods/AHGhostCoopNative/dlls/main.dll'))) {
+    Write-Host 'Native mod filename is incorrect. UE4SS requires dlls/main.dll; use Install.cmd.'
+}
+$ThirdPartyClient=Join-Path $GamePath 'steamclient64.dll'
+if (Test-Path -LiteralPath $ThirdPartyClient) {
+    Write-Host ('Game-local Steam client product: '+(Get-Item -LiteralPath $ThirdPartyClient).VersionInfo.ProductName)
+}
 Get-Process -Name 'AtomicHeart-Win64-Shipping' -ErrorAction SilentlyContinue |
     Select-Object Id,Responding,StartTime | Format-Table -AutoSize
-foreach ($Name in @('native_status.txt','native_performance.txt','bridge_status.txt','local.tsv','remote.tsv')) {
+foreach ($Name in @('native_status.txt','native_performance.txt','bridge_status.txt','gui_status.tsv','steam_overlay_status.txt','steam_lobby.txt','local.tsv','remote.tsv')) {
     $Path=Join-Path $State $Name
     if (Test-Path -LiteralPath $Path) {
         $Age=((Get-Date)-(Get-Item -LiteralPath $Path).LastWriteTime).TotalSeconds

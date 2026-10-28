@@ -62,7 +62,7 @@ try {
     foreach ($Directory in @('tools','server','mod','assets')) {
         Copy-Item -LiteralPath (Join-Path $Root $Directory) -Destination $Fixture -Recurse
     }
-    foreach ($Name in @('README.md','LICENSE','THIRD_PARTY_NOTICES.md','Install.cmd','Host.cmd','Join.cmd','Diagnostics.cmd')) {
+    foreach ($Name in @('README.md','LICENSE','THIRD_PARTY_NOTICES.md','Install.cmd','Host.cmd','Join.cmd','Diagnostics.cmd','SteamHost.cmd','SteamJoin.cmd')) {
         Copy-Item -LiteralPath (Join-Path $Root $Name) -Destination $Fixture
     }
     foreach ($Relative in @('native/vendor/minhook-1.3.4/LICENSE.txt','native/vendor/quaternius/LICENSE.txt','native/vendor/quaternius/SOURCE.json')) {
@@ -82,6 +82,9 @@ try {
     foreach ($Name in @('python.exe','python3.dll','python313.dll','python313.zip','python313._pth','LICENSE.txt')) {
         [IO.File]::WriteAllText((Join-Path $Runtime $Name),'Python layout fixture')
     }
+    Write-FixtureFile 'runtime/steam/steam_api64.dll' 'Steamworks fixture: packaging only'
+    Write-FixtureFile 'runtime/steam/SOURCE.json' '{"source":"test fixture"}'
+    Write-FixtureFile 'runtime/steam/Steamworks.NET-LICENSE.txt' 'Dependency license fixture'
     $Packager=Join-Path $Fixture 'tools\package.ps1'
     Assert-Rejected { & $Packager -ArchivePath $Archive } 'A player release requires'
     Assert-Rejected { & $Packager -PythonRuntimeSource $Runtime -PythonEmbedZip 'unused.zip' -ArchivePath $Archive } 'Choose PythonEmbedZip or PythonRuntimeSource'
@@ -99,6 +102,8 @@ try {
     try {
         $Entries=@($Zip.Entries | ForEach-Object { $_.FullName.Replace('\','/') } | Where-Object { !$_.EndsWith('/') })
         foreach ($Required in @('README.md','LICENSE','THIRD_PARTY_NOTICES.md','Install.cmd','Host.cmd','Join.cmd','Diagnostics.cmd',
+            'SteamHost.cmd','SteamJoin.cmd','tools/setup_steam.ps1','server/ghost_coop/steam_api.py','server/ghost_coop/steam_bridge.py',
+            'runtime/steam/steam_api64.dll','runtime/steam/ahg_steam_api64.dll','runtime/steam/SOURCE.json','runtime/steam/Steamworks.NET-LICENSE.txt',
             'dist/AHGhostCoopNative.dll','dist/AHGhostCoopNavigation_P.pak','runtime/python/python.exe','runtime/python/LICENSE.txt',
             'runtime/python/python3.dll','runtime/python/python313.dll','runtime/python/python313.zip','runtime/python/python313._pth',
             'mod/AHGhostCoop/settings.ini','mod/AHGhostCoop/Scripts/main.lua','tools/install.ps1','tools/start.ps1','tools/diagnose.ps1',
@@ -112,7 +117,7 @@ try {
             Assert ($Entries -contains "AHGhostCoop/$ImagePath") "README image missing from player ZIP: $ImagePath"
         }
         Assert (!($Entries -match '/(native|tests|logicmod|__pycache__|state)/|\.(pdb|map|pyc|log)$|/private\.|/\.editorconfig$')) 'Development or state files entered the player ZIP'
-        Assert (!($Entries -match '/tools/(?!install\.ps1$|start\.ps1$|diagnose\.ps1$|firewall\.ps1$)')) 'Development tools entered the player ZIP'
+        Assert (!($Entries -match '/tools/(?!install\.ps1$|start\.ps1$|diagnose\.ps1$|firewall\.ps1$|setup_steam\.ps1$)')) 'Development tools entered the player ZIP'
         Assert (!($Entries -match '(?i)/(UE4SS[^/]*|dwmapi\.dll|MemberVariableLayout\.ini|LICENSE-UE4SS\.txt)(/|$)')) 'UE4SS entered the player ZIP'
         $Notices=Read-ZipText $Zip 'AHGhostCoop/THIRD_PARTY_NOTICES.md'
         Assert (!$Notices.Contains('native/vendor/')) 'Packaged notices have broken vendor paths'

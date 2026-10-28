@@ -1,5 +1,6 @@
 #pragma once
 #include <cmath>
+#include <cstddef>
 #include "ghost/core/vector.hpp"
 #include "ghost/core/combat_state.hpp"
 #include <cstdint>
@@ -8,6 +9,8 @@
 
 namespace ghost
 {
+inline constexpr std::size_t max_players = 8;
+inline constexpr std::size_t max_snapshot_bytes = 32768;
 // Wire positions are visual anchors 90 cm above the capsule base. Unlike the
 // capsule center this stays at a constant height when the capsule crouches.
 // Existing FeetOffset=-90 then places the mesh origin at that base. Custom
@@ -23,6 +26,8 @@ struct State
 {
     std::string id, name, session, world;
     std::uint64_t seq{};
+    // Local arrival time of this unique sample; never serialized on the wire.
+    double received_at{};
     Vec3 position{}, velocity{};
     float yaw{};
     CombatState combat{};

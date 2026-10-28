@@ -60,17 +60,17 @@ inline std::optional<Roster> parse_roster(std::string_view text)
             std::from_chars(value.data(), value.data() + value.size(), output);
         return error == std::errc{} && end == value.data() + value.size() && output <= maximum;
     };
-    if (text.size() > 8192)
+    if (text.size() > max_snapshot_bytes)
         return {};
     if (!text.empty() && text.back() == '\n')
         text.remove_suffix(1);
     auto lines = split(text, '\n');
     auto header = split(lines[0], '\t');
     Roster result;
+    std::size_t count{};
     if (header.size() != 4 || header[0] != "AHGR3" || !token(header[1]) ||
-        !sequence(header[2], result.seq) || (header[3] != "0" && header[3] != "1"))
+        !sequence(header[2], result.seq) || !bounded_unsigned(header[3], count, max_players - 1))
         return {};
-    const std::size_t count = header[3] == "1" ? 1 : 0;
     if (lines.size() != count + 1)
         return {};
     result.session = header[1];
@@ -110,6 +110,9 @@ inline std::optional<Roster> parse_roster(std::string_view text)
                     return {};
             }
         s.id = f[0];
+        if (std::any_of(result.players.begin(), result.players.end(),
+                        [&](const State& existing) { return existing.id == s.id; }))
+            return {};
         s.name = f[1];
         s.session = f[2];
         s.world = f[4];

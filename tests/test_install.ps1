@@ -48,6 +48,10 @@ try {
     & $Installer -GamePath $Game -DryRun
     Assert (!(Test-Path -LiteralPath (Join-Path $Mods 'AHGhostCoopNative\dlls\main.dll'))) 'Dry run installed the mod'
     & $Installer -GamePath $Game
+    $Bridge=Join-Path $Mods 'AHGhostCoop\bridge'
+    Assert (Test-Path -LiteralPath (Join-Path $Bridge 'server\ghost_coop\gui_service.py')) 'Installed menu service missing'
+    Assert (Test-Path -LiteralPath (Join-Path $Bridge 'runtime.ini')) 'Installed menu Python configuration missing'
+    Assert (!(Get-ChildItem -LiteralPath $Bridge -Recurse -File -Filter '*.pyc')) 'Python cache files entered the installation'
     $NavPak=Join-Path $Game 'AtomicHeart\Content\Paks\~mods\AHGhostCoopNavigation_P.pak'
     Assert (Test-Path -LiteralPath $NavPak) 'Navigation widget pak missing'
     $Config=Join-Path $Mods 'AHGhostCoop\settings.ini'
