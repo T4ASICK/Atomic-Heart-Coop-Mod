@@ -132,7 +132,7 @@ class SteamLifecycleTests(unittest.TestCase):
             pump = api.pump
             def inspect():
                 if api.frames:
-                    observed.append((Path(directory) / "remote.tsv").read_text())
+                    observed.append((Path(directory) / "remote.tsv").read_text(encoding="utf-8"))
                 pump()
             api.pump = inspect
             args = SimpleNamespace(command="steam-host", steam_api="", state_dir=directory,
@@ -153,15 +153,15 @@ class SteamLifecycleTests(unittest.TestCase):
             pump = api.pump
             def inspect():
                 if api.frames:
-                    observed.append((Path(directory) / "remote.tsv").read_text())
+                    observed.append((Path(directory) / "remote.tsv").read_text(encoding="utf-8"))
                 pump()
             api.pump = inspect
             steam_bridge(args, stop, api_factory=lambda path: api)
             self.assertTrue(api.opened and api.closed and api.left)
             self.assertTrue(any("\t1\n2\t" in text for text in observed))
             self.assertTrue(all(message["lobby"] == "100" and message["id"] == "1" for message in api.sent))
-            self.assertEqual((Path(directory) / "remote.tsv").read_text().splitlines()[0].split("\t")[3], "0")
-            self.assertEqual((Path(directory) / "steam_lobby.txt").read_text(), "")
+            self.assertEqual((Path(directory) / "remote.tsv").read_text(encoding="utf-8").splitlines()[0].split("\t")[3], "0")
+            self.assertEqual((Path(directory) / "steam_lobby.txt").read_text(encoding="utf-8"), "")
             with state_files.state_lock(Path(directory)):
                 pass
 
@@ -174,7 +174,7 @@ class SteamLifecycleTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "wrong room code"):
                 steam_bridge(args, stop, api_factory=lambda path: api)
             self.assertTrue(api.closed and api.left)
-            self.assertIn("wrong room code", (Path(directory) / "bridge_status.txt").read_text())
+            self.assertIn("wrong room code", (Path(directory) / "bridge_status.txt").read_text(encoding="utf-8"))
 
     def test_send_failure_cleans_up_lobby_and_native_file(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -188,4 +188,4 @@ class SteamLifecycleTests(unittest.TestCase):
             with self.assertRaisesRegex(OSError, "connection lost"):
                 steam_bridge(args, stop, api_factory=lambda path: api)
             self.assertTrue(api.closed and api.left)
-            self.assertEqual((Path(directory) / "remote.tsv").read_text().splitlines()[0].split("\t")[3], "0")
+            self.assertEqual((Path(directory) / "remote.tsv").read_text(encoding="utf-8").splitlines()[0].split("\t")[3], "0")
